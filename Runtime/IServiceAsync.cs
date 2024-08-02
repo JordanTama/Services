@@ -5,6 +5,6 @@ namespace Services
     public interface IServiceAsync : IService
     {
         UniTask OnRegistered();
-        UniTask OnDeregistered();
+        UniTask OnUnregistered();
     }
 }

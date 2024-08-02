@@ -51,7 +51,7 @@ namespace Services
                 Logger.Log(this, "Registered!");
             }
 
-            public async UniTask OnDeregistered()
+            public async UniTask OnUnregistered()
             {
                 Logger.Log(this, "Unregistering for two seconds...");
                 await UniTask.Delay(2000);

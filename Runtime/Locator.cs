@@ -68,7 +68,7 @@ namespace Services
                     break;
                 
                 case IServiceAsync async:
-                    await async.OnDeregistered();
+                    await async.OnUnregistered();
                     break;
             }
 
