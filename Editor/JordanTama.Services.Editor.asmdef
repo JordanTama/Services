@@ -1,0 +1,18 @@
+{
+    "name": "JordanTama.Services.Editor",
+    "rootNamespace": "",
+    "references": [
+        "GUID:f4de1bb1182456b42aa02eeb9aa6b11b"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

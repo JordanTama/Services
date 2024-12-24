@@ -10,6 +10,13 @@ namespace Services
     public static class Locator
     {
         private static readonly Dictionary<string, IService> Services = new();
+
+        public static event Action<IService> ServiceBeginRegistering;
+        public static event Action<IService> ServiceBeginUnregistering;
+        public static event Action<IService> ServiceRegistered;
+        public static event Action<IService> ServiceUnregistered;
+
+        public static List<IService> AllServices => Services.Values.ToList();
         
         #region Public Methods
 
@@ -19,6 +26,7 @@ namespace Services
                 return false;
             
             service.OnRegistered();
+            ServiceRegistered?.Invoke(service);
             return true;
         }
 
@@ -26,8 +34,10 @@ namespace Services
         {
             if (!RegisterServiceInternal(service))
                 return false;
-            
+
+            ServiceBeginRegistering?.Invoke(service);
             await service.OnRegistered();
+            ServiceRegistered?.Invoke(service);
             return true;
         }
 
@@ -41,6 +51,8 @@ namespace Services
         {
             if (service == null || !IsRegistered(service))
                 return;
+
+            ServiceBeginUnregistering?.Invoke(service);
 
             // Service is no longer registered, recursively deregister services directly depending on this one
             int numDeregistered = 0;
@@ -74,6 +86,8 @@ namespace Services
 
             string key = GetKey(service);
             Services.Remove(key);
+
+            ServiceUnregistered?.Invoke(service);
         }
         
         public static bool IsRegistered<T>() where T : IService
