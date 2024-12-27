@@ -23,9 +23,6 @@ namespace Editor
             Locator.ServiceUnregistered += OnServiceChange;
 
             EditorApplication.playModeStateChanged += OnPlayModeStateChanged;
-
-            // Create the UI
-            Draw();
         }
 
         private void OnDisable()
@@ -36,24 +33,25 @@ namespace Editor
             EditorApplication.playModeStateChanged -= OnPlayModeStateChanged;
         }
 
+        private void CreateGUI()
+        {
+            Draw();
+        }
+
         private void OnServiceChange(IService service)
         {
-            Redraw();
+            Draw();
         }
 
         private void OnPlayModeStateChanged(PlayModeStateChange newState)
         {
-            Redraw();
-        }
-
-        private void Redraw()
-        {
-            rootVisualElement.Clear();
             Draw();
         }
 
         private void Draw()
         {
+            rootVisualElement.Clear();
+            
             // Warning if the game isn't running
             var warning = new HelpBox("Run the game to see the registered Services.", HelpBoxMessageType.Warning)
             {
