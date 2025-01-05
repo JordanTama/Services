@@ -1,12 +1,12 @@
 {
     "name": "JordanTama.Services.Editor.Tests",
-    "rootNamespace": "",
+    "rootNamespace": "JordanTama.Services.Editor.Tests",
     "references": [
-        "UnityEngine.TestRunner",
-        "UnityEditor.TestRunner",
-        "JordanTama.Logging",
-        "UniTask",
-        "JordanTama.Services"
+        "GUID:27619889b8ba8c24980f49ee34dbb44a",
+        "GUID:0acc523941302664db1f4e527237feb3",
+        "GUID:9961b462a7484bc48801f6b38fc600f4",
+        "GUID:f51ebe6a0ceec4240a699833d6309b23",
+        "GUID:f4de1bb1182456b42aa02eeb9aa6b11b"
     ],
     "includePlatforms": [
         "Editor"

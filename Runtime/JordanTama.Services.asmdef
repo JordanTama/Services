@@ -1,6 +1,6 @@
 {
     "name": "JordanTama.Services",
-    "rootNamespace": "",
+    "rootNamespace": "JordanTama.Services",
     "references": [
         "GUID:f51ebe6a0ceec4240a699833d6309b23",
         "GUID:9961b462a7484bc48801f6b38fc600f4"
