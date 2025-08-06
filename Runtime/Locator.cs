@@ -161,7 +161,7 @@ namespace Services
 
         private static string GetKey(Type type)
         {
-            return type.AssemblyQualifiedName;
+            return type.FullName;
         }
 
         private static bool IsRegistered(IService service)
