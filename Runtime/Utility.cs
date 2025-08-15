@@ -4,6 +4,10 @@ using System.Threading.Tasks;
 using UnityEngine;
 using UnityEngine.AddressableAssets;
 
+#if UNITY_EDITOR
+using UnityEditor;
+#endif
+
 namespace Services
 {
     internal static class Utility
@@ -51,9 +55,9 @@ namespace Services
                 // Create the asset if missing
                 if (!System.IO.File.Exists(assetPath))
                 {
-                    UnityEditor.AssetDatabase.CreateAsset(settings, assetPath);
-                    UnityEditor.AssetDatabase.SaveAssets();
-                    UnityEditor.AssetDatabase.Refresh();
+                    AssetDatabase.CreateAsset(settings, assetPath);
+                    AssetDatabase.SaveAssets();
+                    AssetDatabase.Refresh();
                 }
                 
                 // Settings
@@ -86,7 +90,7 @@ namespace Services
                 }
 
                 // Get asset GUID
-                string guid = UnityEditor.AssetDatabase.AssetPathToGUID(assetPath);
+                string guid = AssetDatabase.AssetPathToGUID(assetPath);
                 if (!string.IsNullOrEmpty(guid))
                 {
                     var entry = addressablesSettings.FindAssetEntry(guid);
@@ -94,8 +98,8 @@ namespace Services
                     {
                         entry = addressablesSettings.CreateOrMoveEntry(guid, group);
                         entry.SetAddress(attribute.Key);
-                        UnityEditor.EditorUtility.SetDirty(addressablesSettings);
-                        UnityEditor.AssetDatabase.SaveAssets();
+                        EditorUtility.SetDirty(addressablesSettings);
+                        AssetDatabase.SaveAssets();
                     }
                     else
                     {
@@ -105,8 +109,8 @@ namespace Services
                         if (entry.address != attribute.Key)
                         {
                             entry.SetAddress(attribute.Key);
-                            UnityEditor.EditorUtility.SetDirty(addressablesSettings);
-                            UnityEditor.AssetDatabase.SaveAssets();
+                            EditorUtility.SetDirty(addressablesSettings);
+                            AssetDatabase.SaveAssets();
                         }
                     }
                 }
@@ -117,6 +121,7 @@ namespace Services
             return settings;
         }
 
+#if UNITY_EDITOR
         private static void CreateDirectory(string path)
         {
             if (string.IsNullOrWhiteSpace(path))
@@ -130,7 +135,7 @@ namespace Services
                 normalized = normalized["Assets/".Length..];
             else if (string.Equals(normalized, "Assets", StringComparison.Ordinal))
             {
-                UnityEditor.AssetDatabase.Refresh();
+                AssetDatabase.Refresh();
                 return;
             }
 
@@ -142,14 +147,15 @@ namespace Services
             foreach (string part in parts)
             {
                 string next = $"{current}/{part}";
-                if (!UnityEditor.AssetDatabase.IsValidFolder(next))
-                    UnityEditor.AssetDatabase.CreateFolder(current, part);
+                if (!AssetDatabase.IsValidFolder(next))
+                    AssetDatabase.CreateFolder(current, part);
 
                 current = next;
             }
 
             // Refresh the AssetDatabase
-            UnityEditor.AssetDatabase.Refresh();
+            AssetDatabase.Refresh();
         }
+#endif
     }
 }
