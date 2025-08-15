@@ -133,6 +133,7 @@ namespace Editor
                 var typeLabel = element.Q<Label>("typeLabel");
                 typeLabel.text = services[index] switch
                 {
+                    ISettingsService => nameof(ISettingsService),
                     IServiceAsync => nameof(IServiceAsync),
                     IServiceStandard => nameof(IServiceStandard),
                     not null => nameof(IService),

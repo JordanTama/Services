@@ -41,6 +41,20 @@ namespace Services
             return true;
         }
 
+        public static async UniTask<bool> RegisterAsync<TService, TSettings>(TService service)
+            where TService : IServiceAsync, ISettingsService<TSettings> where TSettings : ServiceSettings
+        {
+            if (!RegisterServiceInternal(service))
+                return false;
+
+            ServiceBeginRegistering?.Invoke(service);
+            var settings = await Utility.GetSettings<TSettings>();
+            service.InjectSettings(settings);
+            await service.OnRegistered();
+            ServiceRegistered?.Invoke(service);
+            return true;
+        }
+
         public static async UniTask Unregister<T>() where T : IService
         {
             var service = Get<T>();
