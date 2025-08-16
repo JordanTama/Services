@@ -110,6 +110,12 @@ namespace Services
             return IsRegistered(key);
         }
 
+        public static bool IsRegistered<T>(T service) where T : IService
+        {
+            string key = GetKey(service);
+            return IsRegistered(key);
+        }
+
         public static bool Get<T>(out T service) where T : IService
         {
             if (!IsRegistered<T>())
