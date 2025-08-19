@@ -3,7 +3,9 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using Cysharp.Threading.Tasks;
-using Logging;
+using UnityEngine;
+using Logger = Logging.Logger;
+using Object = UnityEngine.Object;
 
 namespace Services
 {
@@ -49,10 +51,46 @@ namespace Services
 
             ServiceBeginRegistering?.Invoke(service);
             var settings = await Utility.GetSettings<TSettings>();
-            service.InjectSettings(settings);
+            service.Settings = settings;
             await service.OnRegistered();
             ServiceRegistered?.Invoke(service);
             return true;
+        }
+
+        public static UniTask<bool> RegisterMonoBehaviour<T>() where T : MonoBehaviourService
+        {
+            var gameObject = new GameObject(typeof(T).Name);
+            var service = (T) gameObject.AddComponent(typeof(T));
+            return RegisterMonoBehaviour(service);
+        }
+
+        public static async UniTask<bool> RegisterMonoBehaviour<T>(T service) where T : MonoBehaviourService
+        {
+            if (!RegisterServiceInternal(service))
+            {
+                Object.Destroy(service.gameObject);
+                return false;
+            }
+            
+            Object.DontDestroyOnLoad(service.gameObject);
+
+            ServiceBeginRegistering?.Invoke(service);
+            await service.OnRegistered();
+            ServiceRegistered?.Invoke(service);
+            return true;
+        }
+
+        public static async UniTask UnregisterMonoBehaviour<T>() where T : MonoBehaviourService
+        {
+            var service = Get<T>();
+            await UnregisterMonoBehaviour(service);
+        }
+
+        public static async UniTask UnregisterMonoBehaviour<T>(T service) where T : MonoBehaviourService
+        {
+            await Unregister(service);
+            Object.Destroy(service.gameObject);
+            await UniTask.NextFrame();
         }
 
         public static async UniTask Unregister<T>() where T : IService
