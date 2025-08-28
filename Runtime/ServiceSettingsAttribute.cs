@@ -8,7 +8,7 @@ namespace Services
         public readonly string Key;
         public readonly string FilePath;
 
-        public ServiceSettingsAttribute(string key, string filePath)
+        public ServiceSettingsAttribute(string key, string filePath = "Assets/Scriptable Objects/Service Settings")
         {
             if (string.IsNullOrEmpty(key))
                 throw new ArgumentException($"'{key}' is an invalid key.");
