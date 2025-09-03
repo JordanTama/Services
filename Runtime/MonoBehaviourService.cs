@@ -9,13 +9,14 @@ namespace Services
         
         private bool _selfRegistered;
         
+        protected bool Ready { get; private set; }
+        
         protected virtual void Awake()
         {
             if (!selfRegister)
                 return;
 
             _selfRegistered = true;
-            enabled = false;
             Locator.RegisterMonoBehaviour(this).Forget();
         }
 
@@ -27,13 +28,13 @@ namespace Services
 
         public virtual UniTask OnRegistered()
         {
-            enabled = true;
+            Ready = true;
             return UniTask.CompletedTask;
         }
 
         public virtual UniTask OnUnregistered()
         {
-            enabled = false;
+            Ready = false;
             return UniTask.CompletedTask;
         }
 
