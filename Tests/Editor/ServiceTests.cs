@@ -1,8 +1,8 @@
 using System.Collections;
 using Cysharp.Threading.Tasks;
 using NUnit.Framework;
+using UnityEngine;
 using UnityEngine.TestTools;
-using Logger = Logging.Logger;
 
 namespace Services
 {
@@ -32,12 +32,12 @@ namespace Services
         {
             public void OnRegistered()
             {
-                Logger.Log(this, "Registered!");
+                Debug.Log("Registered!");
             }
 
             public void OnUnregistered()
             {
-                Logger.Log(this, "Unregistered!");
+                Debug.Log("Unregistered!");
             }
         }
         
@@ -46,16 +46,16 @@ namespace Services
         {
             public async UniTask OnRegistered()
             {
-                Logger.Log(this, "Registering for two seconds...");
+                Debug.Log("Registering for two seconds...");
                 await UniTask.Delay(2000);
-                Logger.Log(this, "Registered!");
+                Debug.Log("Registered!");
             }
 
             public async UniTask OnUnregistered()
             {
-                Logger.Log(this, "Unregistering for two seconds...");
+                Debug.Log("Unregistering for two seconds...");
                 await UniTask.Delay(2000);
-                Logger.Log(this, "Unregistered!");
+                Debug.Log("Unregistered!");
             }
         }
 
@@ -64,12 +64,12 @@ namespace Services
         {
             public void OnRegistered()
             {
-                Logger.Log(this, "Registered!");
+                Debug.Log("Registered!");
             }
 
             public void OnUnregistered()
             {
-                Logger.Log(this, "Unregistered!");
+                Debug.Log("Unregistered!");
             }
         }
     }

@@ -4,7 +4,6 @@ using System.Linq;
 using System.Reflection;
 using Cysharp.Threading.Tasks;
 using UnityEngine;
-using Logger = Logging.Logger;
 using Object = UnityEngine.Object;
 
 namespace Services
@@ -173,7 +172,7 @@ namespace Services
             if (IsRegistered(key)) 
                 return (T) Services[key];
             
-            Logger.Error(nameof(Locator), $"Tried to get {key} but it was not registered.");
+            Debug.LogError($"Tried to get {key} but it was not registered.");
             return default;
         }
         
@@ -198,7 +197,7 @@ namespace Services
                 var missing = serviceAttribute.Dependencies.Where(dependency => !IsRegistered(dependency)).ToArray();
                 if (missing.Length > 0)
                 {
-                    Logger.Error(typeof(Locator), $"Tried to register {key} but it was missing dependencies: {string.Join(", ", missing.Select(GetKey))}");
+                    Debug.LogError($"Tried to register {key} but it was missing dependencies: {string.Join(", ", missing.Select(GetKey))}");
                     return false;
                 }
             }
