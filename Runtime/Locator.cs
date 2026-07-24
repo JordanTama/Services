@@ -42,8 +42,7 @@ namespace Services
             return true;
         }
 
-        public static async UniTask<bool> RegisterAsync<TService, TSettings>(TService service)
-            where TService : IServiceAsync, ISettingsService<TSettings> where TSettings : ServiceSettings
+        public static async UniTask<bool> RegisterAsync<TSettings>(ISettingsService<TSettings> service) where TSettings : ServiceSettings
         {
             if (!RegisterServiceInternal(service))
                 return false;
