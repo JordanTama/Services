@@ -11,11 +11,9 @@ namespace Services
         [UnitySetUp]
         public IEnumerator Setup()
         {
-            Locator.Register(new TestServiceA());
-            
-            yield return Locator.RegisterAsync(new TestServiceB()).ToCoroutine();
-            
-            Locator.Register(new TestServiceC());
+            yield return Locator.Register(new TestServiceA());
+            yield return Locator.Register(new TestServiceB());
+            yield return Locator.Register(new TestServiceC());
         }
 
         [UnityTest]
@@ -28,21 +26,23 @@ namespace Services
             yield break;
         }
         
-        private class TestServiceA : IServiceStandard
+        private class TestServiceA : IService
         {
-            public void OnRegistered()
+            public UniTask OnRegistered()
             {
                 Debug.Log("Registered!");
+                return UniTask.CompletedTask;
             }
 
-            public void OnUnregistered()
+            public UniTask OnUnregistered()
             {
                 Debug.Log("Unregistered!");
+                return UniTask.CompletedTask;
             }
         }
         
         [DependsOnService(typeof(TestServiceA))]
-        private class TestServiceB : IServiceAsync
+        private class TestServiceB : IService
         {
             public async UniTask OnRegistered()
             {
@@ -60,16 +60,18 @@ namespace Services
         }
 
         [DependsOnService(typeof(TestServiceB))]
-        private class TestServiceC : IServiceStandard
+        private class TestServiceC : IService
         {
-            public void OnRegistered()
+            public UniTask OnRegistered()
             {
                 Debug.Log("Registered!");
+                return UniTask.CompletedTask;
             }
 
-            public void OnUnregistered()
+            public UniTask OnUnregistered()
             {
                 Debug.Log("Unregistered!");
+                return UniTask.CompletedTask;
             }
         }
     }

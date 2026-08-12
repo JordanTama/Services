@@ -12,42 +12,28 @@ namespace Services
     {
         private static readonly Dictionary<string, IService> Services = new();
 
-        public static event Action<IService> ServiceBeginRegistering;
-        public static event Action<IService> ServiceBeginUnregistering;
         public static event Action<IService> ServiceRegistered;
-        public static event Action<IService> ServiceUnregistered;
+        public static event Action<Type> ServiceUnregistered;
 
         public static List<IService> AllServices => Services.Values.ToList();
         
         #region Public Methods
 
-        public static bool Register<T>(T service) where T : IServiceStandard
-        {
-            if (!RegisterServiceInternal(service))
-                return false;
-            
-            service.OnRegistered();
-            ServiceRegistered?.Invoke(service);
-            return true;
-        }
-
-        public static async UniTask<bool> RegisterAsync<T>(T service) where T : IServiceAsync
+        public static async UniTask<bool> Register<T>(T service) where T : IService
         {
             if (!RegisterServiceInternal(service))
                 return false;
 
-            ServiceBeginRegistering?.Invoke(service);
             await service.OnRegistered();
             ServiceRegistered?.Invoke(service);
             return true;
         }
 
-        public static async UniTask<bool> RegisterAsync<TSettings>(ISettingsService<TSettings> service) where TSettings : ServiceSettings
+        public static async UniTask<bool> Register<TSettings>(ISettingsService<TSettings> service) where TSettings : ServiceSettings
         {
             if (!RegisterServiceInternal(service))
                 return false;
 
-            ServiceBeginRegistering?.Invoke(service);
             var settings = await Utility.GetSettings<TSettings>();
             service.Settings = settings;
             await service.OnRegistered();
@@ -72,7 +58,6 @@ namespace Services
             
             Object.DontDestroyOnLoad(service.gameObject);
 
-            ServiceBeginRegistering?.Invoke(service);
             await service.OnRegistered();
             ServiceRegistered?.Invoke(service);
             return true;
@@ -99,56 +84,40 @@ namespace Services
 
         public static async UniTask Unregister<T>(T service) where T : IService
         {
-            if (service == null || !IsRegistered(service))
+            if (service == null || !IsRegistered<T>())
                 return;
-
-            ServiceBeginUnregistering?.Invoke(service);
 
             // Service is no longer registered, recursively deregister services directly depending on this one
             int numDeregistered = 0;
             do
             {
-                bool DependsOn(IService dependant)
-                {
-                    var attribute = dependant.GetType().GetCustomAttribute<DependsOnServiceAttribute>();
-                    return attribute != null && attribute.Dependencies.Any(d => d == service.GetType());
-                }
-                
                 foreach (var other in Services.Values.Where(DependsOn))
                 {
                     await Unregister(other);
                     numDeregistered++;
                 }
-                
+
+                continue;
+
+                bool DependsOn(IService dependant)
+                {
+                    var attribute = dependant.GetType().GetCustomAttribute<DependsOnServiceAttribute>();
+                    return attribute != null && attribute.Dependencies.Any(d => d == service.GetType());
+                }
             } while (numDeregistered > 0);
 
             // Now that all dependant services have been deregistered, we can unregister this service
-            switch (service)
-            {
-                case IServiceStandard standard:
-                    standard.OnUnregistered();
-                    break;
-                
-                case IServiceAsync async:
-                    await async.OnUnregistered();
-                    break;
-            }
+            await service.OnUnregistered();
 
             string key = GetKey(service);
             Services.Remove(key);
 
-            ServiceUnregistered?.Invoke(service);
+            ServiceUnregistered?.Invoke(service.GetType());
         }
         
         public static bool IsRegistered<T>() where T : IService
         {
             string key = GetKey<T>();
-            return IsRegistered(key);
-        }
-
-        public static bool IsRegistered<T>(T service) where T : IService
-        {
-            string key = GetKey(service);
             return IsRegistered(key);
         }
 
@@ -184,7 +153,7 @@ namespace Services
             if (service == null)
                 return false;
             
-            if (IsRegistered(service))
+            if (IsRegistered<T>())
                 return false;
             
             string key = GetKey(service);
@@ -218,11 +187,6 @@ namespace Services
         private static string GetKey(Type type)
         {
             return type.FullName;
-        }
-
-        private static bool IsRegistered(IService service)
-        {
-            return IsRegistered(service.GetType());
         }
         
         private static bool IsRegistered(Type type)

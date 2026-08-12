@@ -3,7 +3,7 @@ using UnityEngine;
 
 namespace Services
 {
-    public abstract class MonoBehaviourService : MonoBehaviour, IServiceAsync
+    public abstract class MonoBehaviourService : MonoBehaviour, IService
     {
         [SerializeField] private bool selfRegister;
         

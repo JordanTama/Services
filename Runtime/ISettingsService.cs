@@ -1,10 +1,6 @@
 namespace Services
 {
-    public interface ISettingsService : IServiceAsync
-    {
-    }
-    
-    public interface ISettingsService<in T> : ISettingsService where T : ServiceSettings
+    public interface ISettingsService<in T> : IService where T : ServiceSettings
     {
         T Settings { set; }
     }

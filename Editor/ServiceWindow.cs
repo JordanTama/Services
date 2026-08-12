@@ -1,3 +1,4 @@
+using System;
 using Services;
 using UnityEditor;
 using UnityEngine;
@@ -19,16 +20,16 @@ namespace Editor
         private void OnEnable()
         {
             // Listen to changes on the Locator
-            Locator.ServiceRegistered += OnServiceChange;
-            Locator.ServiceUnregistered += OnServiceChange;
+            Locator.ServiceRegistered += OnServiceRegistered;
+            Locator.ServiceUnregistered += OnServiceUnregistered;
 
             EditorApplication.playModeStateChanged += OnPlayModeStateChanged;
         }
 
         private void OnDisable()
         {
-            Locator.ServiceRegistered -= OnServiceChange;
-            Locator.ServiceUnregistered -= OnServiceChange;
+            Locator.ServiceRegistered -= OnServiceRegistered;
+            Locator.ServiceUnregistered -= OnServiceUnregistered;
             
             EditorApplication.playModeStateChanged -= OnPlayModeStateChanged;
         }
@@ -38,15 +39,11 @@ namespace Editor
             Draw();
         }
 
-        private void OnServiceChange(IService service)
-        {
-            Draw();
-        }
+        private void OnServiceRegistered(IService service) => Draw();
 
-        private void OnPlayModeStateChanged(PlayModeStateChange newState)
-        {
-            Draw();
-        }
+        private void OnServiceUnregistered(Type type) => Draw();
+
+        private void OnPlayModeStateChanged(PlayModeStateChange newState) => Draw();
 
         private void Draw()
         {
@@ -133,9 +130,7 @@ namespace Editor
                 var typeLabel = element.Q<Label>("typeLabel");
                 typeLabel.text = services[index] switch
                 {
-                    ISettingsService => nameof(ISettingsService),
-                    IServiceAsync => nameof(IServiceAsync),
-                    IServiceStandard => nameof(IServiceStandard),
+                    ISettingsService<ServiceSettings> => nameof(ISettingsService<ServiceSettings>),
                     not null => nameof(IService),
                     _ => "INVALID TYPE"
                 };
