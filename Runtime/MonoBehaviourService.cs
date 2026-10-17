@@ -1,5 +1,8 @@
+using System.Collections.Generic;
 using Cysharp.Threading.Tasks;
 using UnityEngine;
+using UnityEngine.AddressableAssets;
+using UnityEngine.ResourceManagement.AsyncOperations;
 
 namespace Services
 {
@@ -8,6 +11,7 @@ namespace Services
         [SerializeField] private bool selfRegister;
         
         private bool _selfRegistered;
+        private readonly List<AsyncOperationHandle> _settingsHandles = new();
         
         protected bool Ready { get; private set; }
         
@@ -24,6 +28,11 @@ namespace Services
         {
             if (_selfRegistered)
                 Locator.UnregisterMonoBehaviour(this).Forget();
+
+            foreach (var handle in _settingsHandles)
+                Addressables.Release(handle);
+
+            _settingsHandles.Clear();
         }
 
         public virtual UniTask OnRegistered()
@@ -38,9 +47,13 @@ namespace Services
             return UniTask.CompletedTask;
         }
 
-        protected static async UniTask<T> LoadSettings<T>() where T : ServiceSettings
+        protected async UniTask<T> LoadSettings<T>() where T : ServiceSettings
         {
-            return await Utility.GetSettings<T>();
+            var (settings, handle) = await Utility.GetSettings<T>();
+            if (handle.IsValid())
+                _settingsHandles.Add(handle);
+
+            return settings;
         }
     }
 }
