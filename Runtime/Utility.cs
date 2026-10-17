@@ -3,6 +3,7 @@ using System.Reflection;
 using System.Threading.Tasks;
 using UnityEngine;
 using UnityEngine.AddressableAssets;
+using UnityEngine.ResourceManagement.AsyncOperations;
 
 #if UNITY_EDITOR
 using UnityEditor;
@@ -12,7 +13,7 @@ namespace Services
 {
     internal static class Utility
     {
-        internal static async Task<T> GetSettings<T>() where T : ServiceSettings
+        internal static async Task<(T settings, AsyncOperationHandle<T> handle)> GetSettings<T>() where T : ServiceSettings
         {
             var settingsType = typeof(T);
             var attribute = settingsType.GetCustomAttribute<ServiceSettingsAttribute>();
@@ -27,98 +28,98 @@ namespace Services
             var locationsHandle = Addressables.LoadResourceLocationsAsync(key);
             await locationsHandle.Task;
 
-            T settings = null;
+            bool exists = locationsHandle is
+            {
+                Status: AsyncOperationStatus.Succeeded,
+                Result: {Count: > 0}
+            };
+            Addressables.Release(locationsHandle);
 
             // If it does, load it - otherwise create a new one
-            if (locationsHandle is
-                {
-                    Status: UnityEngine.ResourceManagement.AsyncOperations.AsyncOperationStatus.Succeeded,
-                    Result: {Count: > 0}
-                })
+            if (exists)
             {
                 var assetHandle = Addressables.LoadAssetAsync<T>(key);
                 await assetHandle.Task;
 
-                if (assetHandle.Status == UnityEngine.ResourceManagement.AsyncOperations.AsyncOperationStatus.Succeeded)
-                    settings = assetHandle.Result;
+                if (assetHandle.Status == AsyncOperationStatus.Succeeded)
+                    return (assetHandle.Result, assetHandle);
                 
                 Addressables.Release(assetHandle);
             }
-            else
-            {
-                settings = ScriptableObject.CreateInstance<T>();
 
 #if UNITY_EDITOR
-                CreateDirectory(attribute.FilePath);
-                string assetPath = attribute.FilePath.TrimEnd('/') + "/" + attribute.Key + ".asset";
+            CreateDirectory(attribute.FilePath);
+            string assetPath = attribute.FilePath.TrimEnd('/') + "/" + attribute.Key + ".asset";
+            
+            // Create the asset if missing
+            var settings = AssetDatabase.LoadAssetAtPath<T>(assetPath);
+            if (settings == null)
+            {
+                settings = ScriptableObject.CreateInstance<T>();
+                AssetDatabase.CreateAsset(settings, assetPath);
+                AssetDatabase.SaveAssets();
+                AssetDatabase.Refresh();
+            }
+            
+            // Settings
+            var addressablesSettings = UnityEditor.AddressableAssets.AddressableAssetSettingsDefaultObject.GetSettings(true);
+
+            // Ensure GeneratedAssets group exists
+            const string targetGroupName = "GeneratedAssets";
+            var group = addressablesSettings.FindGroup(targetGroupName);
+            if (group == null)
+            {
+                group = addressablesSettings.CreateGroup(
+                    targetGroupName,
+                    setAsDefaultGroup: false,
+                    readOnly: false,
+                    postEvent: false,
+                    null,
+                    typeof(UnityEditor.AddressableAssets.Settings.GroupSchemas.BundledAssetGroupSchema),
+                    typeof(UnityEditor.AddressableAssets.Settings.GroupSchemas.ContentUpdateGroupSchema)
+                );
+
+                // Mark as local-only
+                var bundledSchema =
+                    group.GetSchema<UnityEditor.AddressableAssets.Settings.GroupSchemas.BundledAssetGroupSchema>();
                 
-                // Create the asset if missing
-                if (!System.IO.File.Exists(assetPath))
+                if (bundledSchema != null)
                 {
-                    AssetDatabase.CreateAsset(settings, assetPath);
+                    bundledSchema.BuildPath.SetVariableByName(addressablesSettings, "LocalBuildPath");
+                    bundledSchema.LoadPath.SetVariableByName(addressablesSettings, "LocalLoadPath");
+                }
+            }
+
+            // Get asset GUID
+            string guid = AssetDatabase.AssetPathToGUID(assetPath);
+            if (!string.IsNullOrEmpty(guid))
+            {
+                var entry = addressablesSettings.FindAssetEntry(guid);
+                if (entry == null)
+                {
+                    entry = addressablesSettings.CreateOrMoveEntry(guid, group);
+                    entry.SetAddress(attribute.Key);
+                    EditorUtility.SetDirty(addressablesSettings);
                     AssetDatabase.SaveAssets();
-                    AssetDatabase.Refresh();
                 }
-                
-                // Settings
-                var addressablesSettings = UnityEditor.AddressableAssets.AddressableAssetSettingsDefaultObject.GetSettings(true);
-
-                // Ensure GeneratedAssets group exists
-                const string targetGroupName = "GeneratedAssets";
-                var group = addressablesSettings.FindGroup(targetGroupName);
-                if (group == null)
+                else
                 {
-                    group = addressablesSettings.CreateGroup(
-                        targetGroupName,
-                        setAsDefaultGroup: false,
-                        readOnly: false,
-                        postEvent: false,
-                        null,
-                        typeof(UnityEditor.AddressableAssets.Settings.GroupSchemas.BundledAssetGroupSchema),
-                        typeof(UnityEditor.AddressableAssets.Settings.GroupSchemas.ContentUpdateGroupSchema)
-                    );
+                    if (entry.parentGroup != group)
+                        addressablesSettings.MoveEntry(entry, group);
 
-                    // Mark as local-only
-                    var bundledSchema =
-                        group.GetSchema<UnityEditor.AddressableAssets.Settings.GroupSchemas.BundledAssetGroupSchema>();
-                    
-                    if (bundledSchema != null)
+                    if (entry.address != attribute.Key)
                     {
-                        bundledSchema.BuildPath.SetVariableByName(addressablesSettings, "LocalBuildPath");
-                        bundledSchema.LoadPath.SetVariableByName(addressablesSettings, "LocalLoadPath");
-                    }
-                }
-
-                // Get asset GUID
-                string guid = AssetDatabase.AssetPathToGUID(assetPath);
-                if (!string.IsNullOrEmpty(guid))
-                {
-                    var entry = addressablesSettings.FindAssetEntry(guid);
-                    if (entry == null)
-                    {
-                        entry = addressablesSettings.CreateOrMoveEntry(guid, group);
                         entry.SetAddress(attribute.Key);
                         EditorUtility.SetDirty(addressablesSettings);
                         AssetDatabase.SaveAssets();
                     }
-                    else
-                    {
-                        if (entry.parentGroup != group)
-                            addressablesSettings.MoveEntry(entry, group);
-
-                        if (entry.address != attribute.Key)
-                        {
-                            entry.SetAddress(attribute.Key);
-                            EditorUtility.SetDirty(addressablesSettings);
-                            AssetDatabase.SaveAssets();
-                        }
-                    }
                 }
-#endif
             }
 
-            Addressables.Release(locationsHandle);
-            return settings;
+            return (settings, default);
+#else
+            return (ScriptableObject.CreateInstance<T>(), default);
+#endif
         }
 
 #if UNITY_EDITOR

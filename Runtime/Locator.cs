@@ -4,13 +4,22 @@ using System.Linq;
 using System.Reflection;
 using Cysharp.Threading.Tasks;
 using UnityEngine;
+using UnityEngine.AddressableAssets;
+using UnityEngine.ResourceManagement.AsyncOperations;
 using Object = UnityEngine.Object;
+
+#if UNITY_EDITOR
+using UnityEditor;
+#endif
 
 namespace Services
 {
     public static class Locator
     {
         private static readonly Dictionary<string, IService> Services = new();
+        private static readonly HashSet<string> Pending = new();
+        private static readonly List<string> RegistrationOrder = new();
+        private static readonly Dictionary<string, AsyncOperationHandle> SettingsHandles = new();
 
         public static event Action<IService> ServiceRegistered;
         public static event Action<Type> ServiceUnregistered;
@@ -19,26 +28,22 @@ namespace Services
         
         #region Public Methods
 
-        public static async UniTask<bool> Register<T>(T service) where T : IService
+        public static UniTask<bool> Register<T>(T service) where T : IService
         {
-            if (!RegisterServiceInternal(service))
-                return false;
-
-            await service.OnRegistered();
-            ServiceRegistered?.Invoke(service);
-            return true;
+            return RegisterInternal(service, () => service.OnRegistered());
         }
 
-        public static async UniTask<bool> Register<TSettings>(ISettingsService<TSettings> service) where TSettings : ServiceSettings
+        public static UniTask<bool> Register<TSettings>(ISettingsService<TSettings> service) where TSettings : ServiceSettings
         {
-            if (!RegisterServiceInternal(service))
-                return false;
+            return RegisterInternal(service, async () =>
+            {
+                var (settings, handle) = await Utility.GetSettings<TSettings>();
+                if (handle.IsValid())
+                    SettingsHandles[GetKey(service)] = handle;
 
-            var settings = await Utility.GetSettings<TSettings>();
-            service.Settings = settings;
-            await service.OnRegistered();
-            ServiceRegistered?.Invoke(service);
-            return true;
+                service.Settings = settings;
+                await service.OnRegistered();
+            });
         }
 
         public static UniTask<bool> RegisterMonoBehaviour<T>() where T : MonoBehaviourService
@@ -50,69 +55,75 @@ namespace Services
 
         public static async UniTask<bool> RegisterMonoBehaviour<T>(T service) where T : MonoBehaviourService
         {
-            if (!RegisterServiceInternal(service))
+            bool registered = false;
+            try
             {
-                Object.Destroy(service.gameObject);
-                return false;
+                registered = await RegisterInternal(service, () =>
+                {
+                    Object.DontDestroyOnLoad(service.gameObject);
+                    return service.OnRegistered();
+                });
             }
-            
-            Object.DontDestroyOnLoad(service.gameObject);
+            finally
+            {
+                if (!registered && service)
+                    Object.Destroy(service.gameObject);
+            }
 
-            await service.OnRegistered();
-            ServiceRegistered?.Invoke(service);
-            return true;
+            return registered;
         }
 
         public static async UniTask UnregisterMonoBehaviour<T>() where T : MonoBehaviourService
         {
-            var service = Get<T>();
-            await UnregisterMonoBehaviour(service);
+            if (Get<T>(out var service))
+                await UnregisterMonoBehaviour(service);
         }
 
         public static async UniTask UnregisterMonoBehaviour<T>(T service) where T : MonoBehaviourService
         {
             await Unregister(service);
-            Object.Destroy(service.gameObject);
+
+            if (service)
+                Object.Destroy(service.gameObject);
+
             await UniTask.NextFrame();
         }
 
         public static async UniTask Unregister<T>() where T : IService
         {
-            var service = Get<T>();
-            await Unregister(service);
+            if (Get<T>(out var service))
+                await Unregister(service);
         }
 
         public static async UniTask Unregister<T>(T service) where T : IService
         {
-            if (service == null || !IsRegistered<T>())
+            if (service == null || !IsRegistered(service.GetType()))
                 return;
 
             // Service is no longer registered, recursively deregister services directly depending on this one
-            int numDeregistered = 0;
-            do
-            {
-                foreach (var other in Services.Values.Where(DependsOn))
-                {
-                    await Unregister(other);
-                    numDeregistered++;
-                }
-
-                continue;
-
-                bool DependsOn(IService dependant)
-                {
-                    var attribute = dependant.GetType().GetCustomAttribute<DependsOnServiceAttribute>();
-                    return attribute != null && attribute.Dependencies.Any(d => d == service.GetType());
-                }
-            } while (numDeregistered > 0);
+            IService dependant;
+            while ((dependant = Services.Values.FirstOrDefault(DependsOn)) != null)
+                await Unregister(dependant);
 
             // Now that all dependant services have been deregistered, we can unregister this service
             await service.OnUnregistered();
 
             string key = GetKey(service);
             Services.Remove(key);
+            RegistrationOrder.Remove(key);
+            ReleaseSettings(key);
+
+            if (service is MonoBehaviourService behaviour && behaviour)
+                Object.Destroy(behaviour.gameObject);
 
             ServiceUnregistered?.Invoke(service.GetType());
+            return;
+
+            bool DependsOn(IService other)
+            {
+                var attribute = other.GetType().GetCustomAttribute<DependsOnServiceAttribute>();
+                return attribute != null && attribute.Dependencies.Any(d => d == service.GetType());
+            }
         }
         
         public static bool IsRegistered<T>() where T : IService
@@ -146,32 +157,102 @@ namespace Services
         
         #endregion
 
+        #region Lifecycle
+
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        private static void ResetState()
+        {
+            foreach (var handle in SettingsHandles.Values.Where(handle => handle.IsValid()))
+                Addressables.Release(handle);
+
+            Services.Clear();
+            Pending.Clear();
+            RegistrationOrder.Clear();
+            SettingsHandles.Clear();
+        }
+
+        private static async UniTask UnregisterAll()
+        {
+            while (RegistrationOrder.Count > 0)
+                await Unregister(Services[RegistrationOrder[^1]]);
+        }
+
+#if UNITY_EDITOR
+        [InitializeOnLoadMethod]
+        private static void ListenForPlayModeExit()
+        {
+            EditorApplication.playModeStateChanged += OnPlayModeStateChanged;
+        }
+
+        private static void OnPlayModeStateChanged(PlayModeStateChange change)
+        {
+            if (change == PlayModeStateChange.ExitingPlayMode && !ReloadsDomainOnPlay())
+                UnregisterAll().Forget();
+        }
+
+        private static bool ReloadsDomainOnPlay()
+        {
+            return !EditorSettings.enterPlayModeOptionsEnabled
+                   || (EditorSettings.enterPlayModeOptions & EnterPlayModeOptions.DisableDomainReload) == 0;
+        }
+#endif
+
+        #endregion
+
         #region Private Methods
 
-        private static bool RegisterServiceInternal<T>(T service) where T : IService
+        private static async UniTask<bool> RegisterInternal(IService service, Func<UniTask> initialise)
         {
-            if (service == null)
+            if (!TryReserve(service))
                 return false;
-            
-            if (IsRegistered<T>())
-                return false;
-            
-            string key = GetKey(service);
 
-            // Ensure all service dependencies are already registered
-            var serviceAttribute = service.GetType().GetCustomAttribute<DependsOnServiceAttribute>();
-            if (serviceAttribute != null && !serviceAttribute.Dependencies.Select(GetKey).All(Services.ContainsKey))
+            string key = GetKey(service);
+            try
             {
-                var missing = serviceAttribute.Dependencies.Where(dependency => !IsRegistered(dependency)).ToArray();
-                if (missing.Length > 0)
-                {
-                    Debug.LogError($"Tried to register {key} but it was missing dependencies: {string.Join(", ", missing.Select(GetKey))}");
-                    return false;
-                }
+                await initialise();
+            }
+            catch
+            {
+                ReleaseSettings(key);
+                throw;
+            }
+            finally
+            {
+                Pending.Remove(key);
             }
 
             Services.Add(key, service);
+            RegistrationOrder.Add(key);
+            ServiceRegistered?.Invoke(service);
             return true;
+        }
+
+        private static bool TryReserve(IService service)
+        {
+            if (service == null)
+                return false;
+
+            string key = GetKey(service);
+            if (IsRegistered(key) || Pending.Contains(key))
+                return false;
+
+            // Ensure all service dependencies are already registered
+            var serviceAttribute = service.GetType().GetCustomAttribute<DependsOnServiceAttribute>();
+            var missing = serviceAttribute?.Dependencies.Where(dependency => !IsRegistered(dependency)).ToArray();
+            if (missing is { Length: > 0 })
+            {
+                Debug.LogError($"Tried to register {key} but it was missing dependencies: {string.Join(", ", missing.Select(GetKey))}");
+                return false;
+            }
+
+            Pending.Add(key);
+            return true;
+        }
+
+        private static void ReleaseSettings(string key)
+        {
+            if (SettingsHandles.Remove(key, out var handle))
+                Addressables.Release(handle);
         }
 
         private static string GetKey(IService service)
