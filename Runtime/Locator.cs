@@ -20,20 +20,33 @@ namespace Services
         private static readonly HashSet<string> Pending = new();
         private static readonly List<string> RegistrationOrder = new();
         private static readonly Dictionary<string, AsyncOperationHandle> SettingsHandles = new();
+        private static readonly Dictionary<string, UniTaskCompletionSource> Unregistering = new();
+
+        private static readonly MethodInfo RegisterWithSettingsMethod =
+            typeof(Locator).GetMethod(nameof(RegisterWithSettings), BindingFlags.NonPublic | BindingFlags.Static);
 
         public static event Action<IService> ServiceRegistered;
         public static event Action<Type> ServiceUnregistered;
 
         public static List<IService> AllServices => Services.Values.ToList();
-        
+
         #region Public Methods
 
         public static UniTask<bool> Register<T>(T service) where T : IService
         {
+            var settingsType = GetSettingsType(service);
+            if (settingsType != null)
+                return (UniTask<bool>) RegisterWithSettingsMethod.MakeGenericMethod(settingsType).Invoke(null, new object[] { service });
+
             return RegisterInternal(service, () => service.OnRegistered());
         }
 
         public static UniTask<bool> Register<TSettings>(ISettingsService<TSettings> service) where TSettings : ServiceSettings
+        {
+            return RegisterWithSettings(service);
+        }
+
+        private static UniTask<bool> RegisterWithSettings<TSettings>(ISettingsService<TSettings> service) where TSettings : ServiceSettings
         {
             return RegisterInternal(service, async () =>
             {
@@ -97,32 +110,51 @@ namespace Services
 
         public static async UniTask Unregister<T>(T service) where T : IService
         {
-            if (service == null || !IsRegistered(service.GetType()))
+            if (service == null)
                 return;
 
-            // Service is no longer registered, recursively deregister services directly depending on this one
-            IService dependant;
-            while ((dependant = Services.Values.FirstOrDefault(DependsOn)) != null)
-                await Unregister(dependant);
-
-            // Now that all dependant services have been deregistered, we can unregister this service
-            await service.OnUnregistered();
-
             string key = GetKey(service);
-            Services.Remove(key);
-            RegistrationOrder.Remove(key);
-            ReleaseSettings(key);
+            if (Unregistering.TryGetValue(key, out var inProgress))
+            {
+                await inProgress.Task;
+                return;
+            }
 
-            if (service is MonoBehaviourService behaviour && behaviour)
-                Object.Destroy(behaviour.gameObject);
+            if (!Services.TryGetValue(key, out var registered) || !ReferenceEquals(registered, service))
+                return;
 
-            ServiceUnregistered?.Invoke(service.GetType());
+            var completion = new UniTaskCompletionSource();
+            Unregistering.Add(key, completion);
+            try
+            {
+                // Recursively deregister services directly depending on this one
+                IService dependant;
+                while ((dependant = Services.Values.FirstOrDefault(DependsOn)) != null)
+                    await Unregister(dependant);
+
+                // Now that all dependant services have been deregistered, we can unregister this service
+                await service.OnUnregistered();
+
+                Services.Remove(key);
+                RegistrationOrder.Remove(key);
+                ReleaseSettings(key);
+
+                if (service is MonoBehaviourService behaviour && behaviour)
+                    Object.Destroy(behaviour.gameObject);
+
+                ServiceUnregistered?.Invoke(service.GetType());
+            }
+            finally
+            {
+                Unregistering.Remove(key);
+                completion.TrySetResult();
+            }
+
             return;
 
             bool DependsOn(IService other)
             {
-                var attribute = other.GetType().GetCustomAttribute<DependsOnServiceAttribute>();
-                return attribute != null && attribute.Dependencies.Any(d => d == service.GetType());
+                return GetDependencies(other.GetType()).Contains(service.GetType());
             }
         }
         
@@ -169,6 +201,7 @@ namespace Services
             Pending.Clear();
             RegistrationOrder.Clear();
             SettingsHandles.Clear();
+            Unregistering.Clear();
         }
 
         private static async UniTask UnregisterAll()
@@ -237,9 +270,8 @@ namespace Services
                 return false;
 
             // Ensure all service dependencies are already registered
-            var serviceAttribute = service.GetType().GetCustomAttribute<DependsOnServiceAttribute>();
-            var missing = serviceAttribute?.Dependencies.Where(dependency => !IsRegistered(dependency)).ToArray();
-            if (missing is { Length: > 0 })
+            var missing = GetDependencies(service.GetType()).Where(dependency => !IsRegistered(dependency)).ToArray();
+            if (missing.Length > 0)
             {
                 Debug.LogError($"Tried to register {key} but it was missing dependencies: {string.Join(", ", missing.Select(GetKey))}");
                 return false;
@@ -247,6 +279,24 @@ namespace Services
 
             Pending.Add(key);
             return true;
+        }
+
+        private static IEnumerable<Type> GetDependencies(Type serviceType)
+        {
+            return serviceType.GetInterfaces()
+                .Prepend(serviceType)
+                .Select(type => type.GetCustomAttribute<DependsOnServiceAttribute>())
+                .Where(attribute => attribute != null)
+                .SelectMany(attribute => attribute.Dependencies)
+                .Distinct();
+        }
+
+        private static Type GetSettingsType(IService service)
+        {
+            return service?.GetType()
+                .GetInterfaces()
+                .FirstOrDefault(type => type.IsGenericType && type.GetGenericTypeDefinition() == typeof(ISettingsService<>))
+                ?.GetGenericArguments()[0];
         }
 
         private static void ReleaseSettings(string key)
